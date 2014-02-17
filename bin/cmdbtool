@@ -1,0 +1,244 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+from argparse import ArgumentParser
+import inspect
+import re
+from libcmdb2.core import CMDBServer, resources
+from libcmdb2.resources.common import Resource
+
+# Husk: "requests"
+
+__version__ = '0.0.1'
+__author__ = u'Erlend Bergsås <erlend.bergsaas@met.no>'
+
+###
+# Some configuration. hrm... Hardcoding rox
+reversal = {
+  'host': ["item", "serial"] 
+}
+default_output = {
+  'host': ["name", ["item", "serial"]]
+}
+
+###
+# Some functions here
+
+# Compile ''query''
+# This is DIRTY. And: rather unsafe. :) Oh well.
+def compile_output(output, obj):
+  compiled = []
+  for attr in output:
+    if isinstance(attr, list):
+      this_obj = obj
+      for this_attr in attr:
+        if this_attr in this_obj.required_attrs or this_attr in this_obj.optional_attrs:
+          this_obj = getattr(this_obj, this_attr)
+        else:
+          print "Die die die! No such attr in %s: %s" %(this_obj.resource_name, this_attr)
+          exit(1)
+      compiled += ["obj." + ".".join(attr)]
+    else:
+      if not (attr in obj.required_attrs or attr in obj.optional_attrs):
+        print "Die die die! No such attr in %s: %s" %(obj.resource_name, attr)
+        exit(1)
+      compiled += ["obj." + attr]
+    
+  # EVAL!!! HACK HACK HACK.
+  return compile(', '.join(compiled), '<string>', 'eval')
+
+def get_resource_info(r, cache):
+  cache['attributes'] = r.required_attrs + r.optional_attrs
+  cache['pk'] = r.pk
+  cache['display_name'] = r.display_name_attrs
+
+
+###
+# Setup argument parsing
+parser = ArgumentParser(description='Drac drac drac drac!')
+parser.add_argument("-r", "--resource", type=str, metavar="resource", help="Lookup specified resource.")
+parser.add_argument("-k", "--key", type=str, metavar="key", help="Lookup using specified key.")
+parser.add_argument("--flt", "-l", help="Field lookup type")
+
+parser.add_argument("-R", "--reverse", help="Lookup reverse (serial?)", action="store_true")
+parser.add_argument("-i", "--ignore-case", help="Ignore case in searches", action="store_true")
+parser.add_argument("-E", "--regex", help="Use regex.", action="store_true")
+parser.add_argument("-o", "--output", help="Output fields")
+parser.add_argument("-O", "--format", help="Output field format")
+parser.add_argument("-c", "--count", help="Print count", action="store_true")
+parser.add_argument("--limit", help="cmdb ''limit''", type=int)
+parser.add_argument(
+  'wordlist',
+  metavar = 'word',
+  nargs='*',
+  help='Words to look up'
+  )
+parser.add_argument("--dump-resource", action="store_true", help="Dump resource attributes.")
+parser.add_argument("--dump-api-base", help="Dump api base", action="store_true")
+parser.add_argument("--dump-flt", help="Show ''field lookup types''", action="store_true")
+parser.add_argument("--dump-object", help="Dump returned objects", action="store_true")
+args = parser.parse_args()
+
+###
+# Program: begin!
+srv = CMDBServer('http://cmdb.met.no', '/api/v2/')
+
+resource = args.resource
+if resource == None:
+  resource = 'host'
+
+if args.output != None:
+  args.output = args.output.split(",")
+  for idx, val in enumerate(args.output):
+    # Ugh. I don't know python. :)
+    tmp = val.split(".")
+    if (len(tmp) > 1):
+      args.output[idx] = tmp
+
+# Type spørring
+if args.flt:
+  flt = args.flt
+else:
+  if args.regex or args.ignore_case:
+    print "Ugh ugh. flt trumphs regex/ignore_case"
+
+  if args.regex: 
+    flt = 'regex'
+  elif args.ignore_case:
+    flt = 'icontains'
+  else:
+    flt = 'contains'
+
+#  Dump resource
+if args.dump_resource:
+  print "Resource: %s" %(resource)
+  rs = srv.resource_schema(resource)
+  for attr in rs:
+    print("  %s\n    %s (%s)"%(attr, rs[attr]["help_text"],rs[attr]["type"]))
+  
+  exit(0)
+
+#  Dump api base
+if args.dump_api_base:
+  print "Api base, baby."
+  api_base = srv._api_base
+  for resource in api_base:
+    print(resource)
+  
+  exit(0)
+
+#  Dump "field looku ptypes"
+if args.dump_flt:
+  print "Flt baby (field lookup type!)"
+  print srv.field_lookup_types
+  exit(0)
+
+
+resource_class = resources.get_class_for(resource)
+resource_cache[resource] = {}
+get_resource_info(resource_class, resource_cache[resource])
+
+
+# Select, as it were, 'key' attribute
+if not args.key == None:
+  key = "__".join(args.key.split(".")) # Ugh ugh ugh ug[h]ly
+else:
+  if args.reverse:
+    try:
+      key = reversal[resource]
+    except KeyError, e:
+      print "Resource %s has no reversal." %(resource)
+      exit(1)
+  else:
+    key = ce]
+
+# Assemble 'query' string
+if not isinstance(flt, list):
+  flt = [flt]
+if not isinstance(key, list):
+  key = [key]
+query_key = "__".join(key + flt)
+
+if args.output != None:
+  output = args.output
+else:
+  try:
+    output = default_output[resource]
+  except KeyError, e:
+    output = [display_name, pk]
+
+if args.format == None:
+  output_format = ": %s"*len(output)
+  output_format = output_format[2:]
+else:
+  output_format = args.format
+
+# Blurp
+if not args.wordlist:
+  args.wordlist = {None}
+
+try:
+  compiled_output = False
+  for word in args.wordlist:
+    if word == None:
+      uri = srv._make_uri(resource)
+    else:
+      uri = srv._make_uri(resource, **{query_key: word})
+
+    if not args.limit == None:
+      if re.match('.*\?.*', uri):
+        uri += "&limit=%d" %(args.limit)
+      else:
+        uri += "?limit=%d" %(args.limit)
+
+    while uri:
+     ret = srv._get_dict(uri)
+
+     if "next" in ret["meta"] and ret["meta"]["next"]:
+       uri = srv._server + ret["meta"]["next"]
+     else:
+       uri = False
+   
+     # Show a counter!
+     if args.count:
+       offset = ret["meta"]["offset"] 
+       limit = ret["meta"]["limit"]
+       tc = ret["meta"]["total_count"]
+
+       to = offset + limit
+       offset += 1 # To make it "human readable"
+       if to > tc:
+         to = tc
+
+       print "Count: %d-%d/%d" %(offset,to,tc)
+ 
+     for obj in ret["objects"]:
+       # Cast objects to their "resource class"
+       obj = resource_class(srv, obj)
+       
+       # Compile query for the first object.
+       if not compiled_output: 
+         compiled_output = compile_output(output, obj)
+       
+       if args.dump_object:
+         dump_object(obj, resource_cache)
+         maxlen = len(max(resource_attributes[resource], key=len))
+         
+         for n in resource_attributes[resource]:
+           try:
+             out = getattr(obj, n)
+           except Exception, e:
+             out = str(e)
+           print "%*s %s" %(maxlen+1, str(n) + ":", out)
+           
+           if isinstance(out, Resource):
+             print out.resource_name
+       # Hihi, eval eval eval. Uh oh.
+       print output_format % eval(compiled_output)
+
+except KeyboardInterrupt:
+  print "^C"
+exit(0)
+
+
+
+# vim: syntax=python
