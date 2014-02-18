@@ -1,10 +1,23 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-from argparse import ArgumentParser
-import inspect
-import re
-from libcmdb2.core import CMDBServer, resources
-from libcmdb2.resources.common import Resource
+try:
+  import sys
+except Exception, e:
+  print "Could not load ''sys'': %s" %(e)
+  exit(1)
+
+try:
+  from argparse import ArgumentParser
+  import inspect
+  import re
+  import codecs
+  import unicodedata
+  from libcmdb2.core import CMDBServer, resources
+  from libcmdb2.resources.common import Resource
+
+except Exception, e:
+  print "Could not load: %s" %(e)
+  exit(1)
 
 # Husk: "requests"
 
@@ -21,37 +34,179 @@ default_output = {
 }
 
 ###
+# Class
+class CMDB:
+  class Client(object):
+    class ResourceCache:
+      def __init__(self, client, resource_name):
+        self.client = client
+        self.resource_name = resource_name
+        self.resource_class = client.resources.get_class_for(resource_name)
+        self.pk = self.resource_class.pk
+        self.resource_schema = client.server.resource_schema(resource_name)
+        self.display_name = self.resource_class.display_name_attrs
+        self.required_attrs = self.resource_class.required_attrs
+        self.optional_attrs = self.resource_class.optional_attrs
+
+      def __repr__(self):
+        return self.resource_name
+
+    class Query:
+      def __init__(self, client, resource):
+        self.client = client
+        self.resource = resource
+        self.set_limit = None
+        self.set_offset = None
+        self.query = None
+        self.uri = None
+
+        self.json = None
+
+        self.ready = False
+      
+      def make_ready(self):
+        if word is None:
+          self.uri = self.client.server._make_uri(self.resource)
+        else:
+          self.uri = self.client.server._make_uri(self.resource, **self.query)
+        
+        if not self.set_limit is None:
+          if re.match('.*\?.*', self.uri):
+            self.uri += "&limit=%d" %(self.set_limit)
+          else:
+            self.uri += "?limit=%d" %(self.set_limit)
+ 
+        if not self.set_offset is None:
+          if re.match('.*\?.*', self.uri):
+            self.uri += "&offset=%d" %(self.set_offset)
+          else:
+            self.uri += "?offset=%d" %(self.set_offset)
+
+      def object_query (self): 
+        if self.uri is None:
+          raise Exception("Not ready")
+
+        if self.uri is False:
+          return False
+
+        self._dict = self.client.server._get_dict(self.uri)
+        
+        if 'next' in self._dict['meta'] and self._dict['meta']['next']:
+          self.uri = self.client.server._server + self._dict['meta']['next']
+        else:
+          self.uri = False
+
+        return self._dict['objects']
+     
+      def offset(self):
+        return self._dict['meta']['offset']
+
+      def limit(self):
+        return self._dict['meta']['limit']
+
+      def total_count(self):
+        return self._dict['meta']['total_count']
+
+    def new_query(self, resource, **kwargs):
+      query = self.Query(self, resource)
+      query.query = kwargs
+      return query
+
+
+    def __init__(self, server, api_path, user = None, api_key = None):
+      # Initiate server object
+      self.server = CMDBServer(server, api_path, user, api_key)
+      self.resources = resources 
+      self.resource_cache = {}
+    
+    def __repr__(self):
+      return str(self.server._server)
+
+    # Ugh
+    def unicode_fallback(self, string):
+      return unicodedata.normalize('NFKD', string).encode('ascii', 'ignore')
+
+    # This is probably a very expensive way of doing it!
+    def cache_resource(self, resource_name):
+      # I hope I don't store that ''resource_name'' string too many times.
+      if not resource_name in self.resource_cache:
+        self.resource_cache[resource_name] = self.ResourceCache(self, resource_name) 
+      return self.resource_cache[resource_name]
+      
+      # Currently there's no clean up of this cache. :)
+      # Oh well. Python will collect my garbage.
+ 
+    def dump_object(self,obj, ident=""): 
+
+      # Get resource name for object
+      name = obj.resource_name
+  
+      # If object resource isn't "cached", do so.
+      cached = self.cache_resource(name)
+
+      #print cached.resource_schema
+      #for attr,item in cached.resource_schema.items():
+      #  for key,subitem in item.items():
+      #    try:
+      #      print "%s.%s => %s"%(attr, key, subitem)
+      #    except UnicodeEncodeError, e:
+      #      print "%s.%s => %s" %(attr,key,self.unicode_fallback(subitem))
+      #return
+
+      # Max length of attribute name: For indentation
+      maxlen = len(max(cached.required_attrs + cached.optional_attrs, key=len)) +1
+
+      for n in cached.required_attrs + cached.optional_attrs:
+        try:
+          out = getattr(obj, n)
+        except Exception, e:
+          if n in obj._attrs._attrs:
+            out = obj._attrs._attrs[n]
+            print obj._cmdb_server._get_dict(obj._cmdb_server._server + out)
+          else:
+            out = e
+        # Print attribute
+        try:
+          print "%s%-*s %s" %(ident, maxlen, str(n) + ":", out)
+        except UnicodeEncodeError, e:
+          print "%s%-*s %s" %(ident, maxlen, str(n) + ":",  self.unicode_fallback(out))
+          print "%s%-*s ^^^ ERRORNEOUS OUTPUT: Mangled" %(ident, maxlen, "")
+
+        # If attribute is a Resource object, dump that resource object as well
+        if isinstance(out, Resource):
+          self.dump_object(out, "  %s" %(ident))
+
+    def resolve_object(self, obj, attr = None):
+      if attr == None:
+        print attr
+    
+    def compile_output(self, output, obj):
+      compiled = []
+      
+      cached = self.cache_resource(obj.resource_name)
+      for attr in output:
+        if isinstance(attr, list):
+          this_obj = obj
+          for this_attr in attr:
+            if this_attr in this_obj.required_attrs or this_attr in this_obj.optional_attrs:
+              this_obj = getattr(this_obj, this_attr)
+            else:
+              print "Die die die! No such attr in %s: %s" %(this_obj.resource_name, this_attr)
+              exit(1)
+          compiled += ["obj." + ".".join(attr)]
+        else:
+          if not (attr in obj.required_attrs or attr in obj.optional_attrs):
+            print "Die die die! No such attr in %s: %s" %(obj.resource_name, attr)
+            exit(1)
+          compiled += ["obj." + attr]
+      # EVAL!!! EVIL AND DANGEROUS HACK. HACK HACK HACK.
+      return compile(', '.join(compiled), '<string>', 'eval')
+
+###
 # Some functions here
 
 # Compile ''query''
 # This is DIRTY. And: rather unsafe. :) Oh well.
-def compile_output(output, obj):
-  compiled = []
-  for attr in output:
-    if isinstance(attr, list):
-      this_obj = obj
-      for this_attr in attr:
-        if this_attr in this_obj.required_attrs or this_attr in this_obj.optional_attrs:
-          this_obj = getattr(this_obj, this_attr)
-        else:
-          print "Die die die! No such attr in %s: %s" %(this_obj.resource_name, this_attr)
-          exit(1)
-      compiled += ["obj." + ".".join(attr)]
-    else:
-      if not (attr in obj.required_attrs or attr in obj.optional_attrs):
-        print "Die die die! No such attr in %s: %s" %(obj.resource_name, attr)
-        exit(1)
-      compiled += ["obj." + attr]
-    
-  # EVAL!!! HACK HACK HACK.
-  return compile(', '.join(compiled), '<string>', 'eval')
-
-def get_resource_info(r, cache):
-  cache['attributes'] = r.required_attrs + r.optional_attrs
-  cache['pk'] = r.pk
-  cache['display_name'] = r.display_name_attrs
-
-
 ###
 # Setup argument parsing
 parser = ArgumentParser(description='Drac drac drac drac!')
@@ -60,12 +215,14 @@ parser.add_argument("-k", "--key", type=str, metavar="key", help="Lookup using s
 parser.add_argument("--flt", "-l", help="Field lookup type")
 
 parser.add_argument("-R", "--reverse", help="Lookup reverse (serial?)", action="store_true")
+parser.add_argument("-F", "--follow", help="Follow resources recursively", action="store_true")
 parser.add_argument("-i", "--ignore-case", help="Ignore case in searches", action="store_true")
 parser.add_argument("-E", "--regex", help="Use regex.", action="store_true")
 parser.add_argument("-o", "--output", help="Output fields")
 parser.add_argument("-O", "--format", help="Output field format")
 parser.add_argument("-c", "--count", help="Print count", action="store_true")
-parser.add_argument("--limit", help="cmdb ''limit''", type=int)
+parser.add_argument("--query-limit", help="cmdb ''query limit''", type=int)
+parser.add_argument("--query-offset", help="cmdb ''query offset''", type=int)
 parser.add_argument(
   'wordlist',
   metavar = 'word',
@@ -76,15 +233,17 @@ parser.add_argument("--dump-resource", action="store_true", help="Dump resource 
 parser.add_argument("--dump-api-base", help="Dump api base", action="store_true")
 parser.add_argument("--dump-flt", help="Show ''field lookup types''", action="store_true")
 parser.add_argument("--dump-object", help="Dump returned objects", action="store_true")
+
+
 args = parser.parse_args()
 
 ###
 # Program: begin!
-srv = CMDBServer('http://cmdb.met.no', '/api/v2/')
+client = CMDB.Client('http://cmdb.met.no', '/api/v2/')
 
 resource = args.resource
 if resource == None:
-  resource = 'host'
+  resource = default_output.keys()[0]
 
 if args.output != None:
   args.output = args.output.split(",")
@@ -111,7 +270,8 @@ else:
 #  Dump resource
 if args.dump_resource:
   print "Resource: %s" %(resource)
-  rs = srv.resource_schema(resource)
+  rs = client.cache_resource(resource).resource_schema
+
   for attr in rs:
     print("  %s\n    %s (%s)"%(attr, rs[attr]["help_text"],rs[attr]["type"]))
   
@@ -120,7 +280,7 @@ if args.dump_resource:
 #  Dump api base
 if args.dump_api_base:
   print "Api base, baby."
-  api_base = srv._api_base
+  api_base = client.server._api_base
   for resource in api_base:
     print(resource)
   
@@ -129,14 +289,11 @@ if args.dump_api_base:
 #  Dump "field looku ptypes"
 if args.dump_flt:
   print "Flt baby (field lookup type!)"
-  print srv.field_lookup_types
+  print client.server.field_lookup_types
   exit(0)
 
-
-resource_class = resources.get_class_for(resource)
-resource_cache[resource] = {}
-get_resource_info(resource_class, resource_cache[resource])
-
+resource_cache = client.cache_resource(resource)
+resource_class = resource_cache.resource_class
 
 # Select, as it were, 'key' attribute
 if not args.key == None:
@@ -149,7 +306,7 @@ else:
       print "Resource %s has no reversal." %(resource)
       exit(1)
   else:
-    key = ce]
+    key = resource_cache.display_name
 
 # Assemble 'query' string
 if not isinstance(flt, list):
@@ -164,7 +321,7 @@ else:
   try:
     output = default_output[resource]
   except KeyError, e:
-    output = [display_name, pk]
+    output = [resource_cache.display_name, resource_cache.pk]
 
 if args.format == None:
   output_format = ": %s"*len(output)
@@ -179,61 +336,41 @@ if not args.wordlist:
 try:
   compiled_output = False
   for word in args.wordlist:
-    if word == None:
-      uri = srv._make_uri(resource)
-    else:
-      uri = srv._make_uri(resource, **{query_key: word})
 
-    if not args.limit == None:
-      if re.match('.*\?.*', uri):
-        uri += "&limit=%d" %(args.limit)
-      else:
-        uri += "?limit=%d" %(args.limit)
+    # I've no idea whether this is "pythonic" or not.
+    query = client.new_query(resource, **{query_key: word})
 
-    while uri:
-     ret = srv._get_dict(uri)
+    query.set_limit = args.query_limit
+    query.set_offset = args.query_offset
+    query.make_ready()
 
-     if "next" in ret["meta"] and ret["meta"]["next"]:
-       uri = srv._server + ret["meta"]["next"]
-     else:
-       uri = False
-   
-     # Show a counter!
-     if args.count:
-       offset = ret["meta"]["offset"] 
-       limit = ret["meta"]["limit"]
-       tc = ret["meta"]["total_count"]
+    
+    objects = 1
+    try:
+      while objects:
+        objects = query.object_query()
+        
+        # Ugh I wish I could do "while objects = ..."
+        if not isinstance(objects, list):
+          break
+        
+        if args.count:
+          print "Count: %d/%d" %(query.offset(), query.total_count())
+        
+        for obj in objects:
+          obj = resource_cache.resource_class(client.server, obj)
 
-       to = offset + limit
-       offset += 1 # To make it "human readable"
-       if to > tc:
-         to = tc
-
-       print "Count: %d-%d/%d" %(offset,to,tc)
- 
-     for obj in ret["objects"]:
-       # Cast objects to their "resource class"
-       obj = resource_class(srv, obj)
+          if not compiled_output:
+            compiled_output = client.compile_output(output, obj)
        
-       # Compile query for the first object.
-       if not compiled_output: 
-         compiled_output = compile_output(output, obj)
-       
-       if args.dump_object:
-         dump_object(obj, resource_cache)
-         maxlen = len(max(resource_attributes[resource], key=len))
-         
-         for n in resource_attributes[resource]:
-           try:
-             out = getattr(obj, n)
-           except Exception, e:
-             out = str(e)
-           print "%*s %s" %(maxlen+1, str(n) + ":", out)
-           
-           if isinstance(out, Resource):
-             print out.resource_name
-       # Hihi, eval eval eval. Uh oh.
-       print output_format % eval(compiled_output)
+          if args.dump_object:
+            client.dump_object(obj)
+
+          print output_format % eval(compiled_output)
+
+    except KeyboardInterrupt:
+      print "Uh oh."
+      raise KeyboardInterrupt
 
 except KeyboardInterrupt:
   print "^C"
