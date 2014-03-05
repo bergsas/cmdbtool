@@ -174,7 +174,7 @@ try:
 
     query.set_limit = args.query_limit
     query.set_offset = args.query_offset
-    query.make_ready()
+    query.make_ready(word)
 
     
     objects = 1

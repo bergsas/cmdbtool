@@ -34,7 +34,7 @@ class CMDB:
 
         self.ready = False
       
-      def make_ready(self):
+      def make_ready(self, word):
         if word is None:
           self.uri = self.client.server._make_uri(self.resource)
         else:
