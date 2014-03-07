@@ -2,6 +2,7 @@
 import re
 import codecs
 import unicodedata
+from libcmdb2.exceptions import *
 from libcmdb2.core import CMDBServer, resources
 from libcmdb2.resources.common import Resource
 
@@ -34,8 +35,8 @@ class CMDB:
 
         self.ready = False
       
-      def make_ready(self, word):
-        if word is None:
+      def make_ready(self):
+        if self.query is None:
           self.uri = self.client.server._make_uri(self.resource)
         else:
           self.uri = self.client.server._make_uri(self.resource, **self.query)
@@ -52,9 +53,9 @@ class CMDB:
           else:
             self.uri += "?offset=%d" %(self.set_offset)
 
-      def object_query (self): 
+      def object_query (self):
         if self.uri is None:
-          raise Exception("Not ready")
+          self.make_ready()
 
         if self.uri is False:
           return False
@@ -88,9 +89,10 @@ class CMDB:
       self.server = CMDBServer(server, api_path, user, api_key)
       self.resources = resources 
       self.resource_cache = {}
-    
-    def __repr__(self):
-      return str(self.server._server)
+      self.field_lookup_types = self.server.field_lookup_types
+
+    #def __repr__(self):
+    #  return str(self.server._server)
 
     # Ugh
     def unicode_fallback(self, string):
@@ -149,26 +151,138 @@ class CMDB:
     def resolve_object(self, obj, attr = None):
       if attr == None:
         print attr
-    
+   
+    def default_output(self, obj):
+      cr = self.cache_resource(obj.resource_name)
+      output = cr.required_attrs[:]
+      # http://stackoverflow.com/questions/2612802/how-to-clone-or-copy-a-list-in-python
+      output.remove(cr.display_name)
+      output = [cr.display_name] + output
+      return output
+
+    def sane_output(self, output, obj):
+      sane = []
+      cached = self.cache_resource(obj.resource_name)
+      
+      for attr in output:
+        try:
+          val = getattr(obj, attr)
+          
+          if isinstance(val, Resource):
+            sane += [[attr, '_display_name']]
+          else:
+            if isinstance(val, list):
+              if  cached.resource_schema[attr]['type'] == 'related':
+                # may be implemented: namely: a recursion into these.
+                continue
+
+            sane +=[attr]
+        
+        except MissingImplementation:
+          continue
+          #print "blurp"
+
+      return sane
+
+
+    def generate_output_format(self, output):
+      return '\t'.join(['%s'] * len(output))
+
     def compile_output(self, output, obj):
       compiled = []
-      
+     
       cached = self.cache_resource(obj.resource_name)
       for attr in output:
         if isinstance(attr, list):
           this_obj = obj
           for this_attr in attr:
-            if this_attr in this_obj.required_attrs or this_attr in this_obj.optional_attrs:
+            if this_attr in this_obj.required_attrs or this_attr in this_obj.optional_attrs or this_attr == '_display_name':
               this_obj = getattr(this_obj, this_attr)
             else:
               print "Die die die! No such attr in %s: %s" %(this_obj.resource_name, this_attr)
               exit(1)
           compiled += ["obj." + ".".join(attr)]
         else:
-          if not (attr in obj.required_attrs or attr in obj.optional_attrs):
+          if not (attr in obj.required_attrs or attr in obj.optional_attrs or attr == '_display_name'):
             print "Die die die! No such attr in %s: %s" %(obj.resource_name, attr)
             exit(1)
           compiled += ["obj." + attr]
       # EVAL!!! EVIL AND DANGEROUS HACK. HACK HACK HACK.
       return compile(', '.join(compiled), '<string>', 'eval')
+
+    # operator: [case sensitive, case insensitive]
+
+    search_operators = {
+      '==':  ['contains','icontains'],
+      '===': ['exact','iexact'],
+      '>':   ['gt','gt'],
+      '>=':  ['gte','gte'],
+      '~':   ['regex','iregex'],
+      '<':   ['lt','lt'],
+      '<=':  ['lte','lte']
+    }
+
+   #(
+   #  'contains',          ==
+   #  'day',         ***
+   #  'endswith',    ***
+   #  'exact',             ===
+   #  'gt',                >
+   #  'gte',               >=
+   #  'icontains',         ==
+   #  'iendswith',   ***
+   #  'iexact',            ===
+   #  'in',          ***
+   #  'iregex',            ~
+   #  'isnull',      ***
+   #  'istartswith', *** 
+   #  'lt',                <
+   #  'lte',               <=
+   #  'month',       ***
+   #  'range',       ***
+   #  'regex',             ~
+   #  'search',      ***
+   #  'startswith',  ***
+   #  'week_day',    ***
+   #  'year'         ***
+   #)
+
+    def init_basic_search(self, resource, query, **options):
+      cr = self.cache_resource(resource)
+      #print cr.resource_schema
+      #print cr.required_attrs
+      #print cr.optional_attrs
+      #print  cr
+
+      case_insensitive = 1
+
+      if 'case-sensitive' in options:
+        case_insensitive = 0
+
+      if len(query) == 0:
+        return {}
+
+      pattern = re.compile(r"(^(([^=~<>!:]*)([=~<>!:]+))?(.*$))")
+
+      
+      dic = {}
+      for item in query:
+        split = pattern.match(item)
+        var, operator, data = split.group(3), split.group(4), split.group(5)
+        
+        if var == None or len(var) == 0:
+          var = cr.display_name
+        
+        if operator == None:
+          operator = self.search_operators.keys()[0]
+        
+        if not operator in self.search_operators:
+          # Lazy me. Lazy me!
+          print "Unknown operator: %s in %s" %(operator, "init_basic_search")
+          exit(1)  # This is not good. I should use raise, really.
+
+        dic['__'.join(var.split('.') + [self.search_operators[operator][case_insensitive]])] = data
+
+      return dic
+        
 # vim: syntax=python

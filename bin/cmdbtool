@@ -17,7 +17,7 @@ try:
 
   from cmdbtool import *
 
-  print "%s" %(sys.path)
+#  print "%s" %(sys.path)
 
 except Exception, e:
   print "Could not load: %s" %(e)
@@ -30,9 +30,6 @@ __author__ = u'Erlend Bergsås <erlend.bergsaas@met.no>'
 
 ###
 # Some configuration. hrm... Hardcoding rox
-reversal = {
-  'host': ["item", "serial"] 
-}
 default_output = {
   'host': ["name", ["item", "serial"]]
 }
@@ -43,31 +40,16 @@ default_output = {
 # Setup argument parsing
 parser = ArgumentParser(description='Drac drac drac drac!')
 parser.add_argument("-r", "--resource", type=str, metavar="resource", help="Lookup specified resource.")
-parser.add_argument("-k", "--key", type=str, metavar="key", help="Lookup using specified key.")
-parser.add_argument("--flt", "-l", help="Field lookup type")
-
-parser.add_argument("-R", "--reverse", help="Lookup reverse (serial?)", action="store_true")
 parser.add_argument("-F", "--follow", help="Follow resources recursively", action="store_true")
 parser.add_argument("-i", "--ignore-case", help="Ignore case in searches", action="store_true")
-parser.add_argument("-E", "--regex", help="Use regex.", action="store_true")
 parser.add_argument("-o", "--output", help="Output fields")
 parser.add_argument("-O", "--format", help="Output field format")
 parser.add_argument("-c", "--count", help="Print count", action="store_true")
 parser.add_argument("--query-limit", help="cmdb ''query limit''", type=int)
 parser.add_argument("--query-offset", help="cmdb ''query offset''", type=int)
-parser.add_argument(
-  'wordlist',
-  metavar = 'word',
-  nargs='*',
-  help='Words to look up'
-  )
-parser.add_argument("--dump-resource", action="store_true", help="Dump resource attributes.")
-parser.add_argument("--dump-api-base", help="Dump api base", action="store_true")
-parser.add_argument("--dump-flt", help="Show ''field lookup types''", action="store_true")
-parser.add_argument("--dump-object", help="Dump returned objects", action="store_true")
+parser.add_argument("-D", "--dump", action="append", help="Dump ''resource'', ''api-base'', ''flt'', ''object'', etc.")
 
-
-args = parser.parse_args()
+args, leftover = parser.parse_known_args()
 
 ###
 # Program: begin!
@@ -85,22 +67,8 @@ if args.output != None:
     if (len(tmp) > 1):
       args.output[idx] = tmp
 
-# Type spørring
-if args.flt:
-  flt = args.flt
-else:
-  if args.regex or args.ignore_case:
-    print "Ugh ugh. flt trumphs regex/ignore_case"
-
-  if args.regex: 
-    flt = 'regex'
-  elif args.ignore_case:
-    flt = 'icontains'
-  else:
-    flt = 'contains'
-
 #  Dump resource
-if args.dump_resource:
+if args.dump and 'resource' in args.dump:
   print "Resource: %s" %(resource)
   rs = client.cache_resource(resource).resource_schema
 
@@ -110,7 +78,7 @@ if args.dump_resource:
   exit(0)
 
 #  Dump api base
-if args.dump_api_base:
+if args.dump and 'api-base' in args.dump:
   print "Api base, baby."
   api_base = client.server._api_base
   for resource in api_base:
@@ -119,7 +87,7 @@ if args.dump_api_base:
   exit(0)
 
 #  Dump "field looku ptypes"
-if args.dump_flt:
+if args.dump and 'flt' in args.dump:
   print "Flt baby (field lookup type!)"
   print client.server.field_lookup_types
   exit(0)
@@ -127,85 +95,75 @@ if args.dump_flt:
 resource_cache = client.cache_resource(resource)
 resource_class = resource_cache.resource_class
 
-# Select, as it were, 'key' attribute
-if not args.key == None:
-  key = "__".join(args.key.split(".")) # Ugh ugh ugh ug[h]ly
-else:
-  if args.reverse:
-    try:
-      key = reversal[resource]
-    except KeyError, e:
-      print "Resource %s has no reversal." %(resource)
-      exit(1)
-  else:
-    key = resource_cache.display_name
+#if args.output != None:
+#  output = args.output
+#else:
+#  try:
+#    output = default_output[resource]
+#  except KeyError, e:
+#    output = [resource_cache.display_name, resource_cache.pk]
+output = args.output
+output_sane = None
+output_format = args.format
 
-# Assemble 'query' string
-if not isinstance(flt, list):
-  flt = [flt]
-if not isinstance(key, list):
-  key = [key]
-query_key = "__".join(key + flt)
-
-if args.output != None:
-  output = args.output
-else:
-  try:
-    output = default_output[resource]
-  except KeyError, e:
-    output = [resource_cache.display_name, resource_cache.pk]
-
-if args.format == None:
-  output_format = ": %s"*len(output)
-  output_format = output_format[2:]
-else:
-  output_format = args.format
+#if args.format == None:
+#  output_format = ": %s"*len(output)
+#  output_format = output_format[2:]
+#else:
+#  output_format = args.format
 
 # Blurp
-if not args.wordlist:
-  args.wordlist = {None}
-
 try:
   compiled_output = False
-  for word in args.wordlist:
+  search = client.init_basic_search(resource, leftover)
+  # I've no idea whether this is "pythonic" or not.
+  query = client.new_query(resource, **search)
 
-    # I've no idea whether this is "pythonic" or not.
-    query = client.new_query(resource, **{query_key: word})
 
-    query.set_limit = args.query_limit
-    query.set_offset = args.query_offset
-    query.make_ready(word)
-
-    
-    objects = 1
-    try:
-      while objects:
-        objects = query.object_query()
+  query.set_limit = args.query_limit
+  query.set_offset = args.query_offset
+   
+  objects = 1
+  try:
+    while objects:
+      objects = query.object_query()
         
-        # Ugh I wish I could do "while objects = ..."
-        if not isinstance(objects, list):
-          break
+      # Ugh I wish I could do "while objects = ..."
+      if not isinstance(objects, list):
+        break
         
-        if args.count:
-          print "Count: %d/%d" %(query.offset(), query.total_count())
+      if args.count:
+        print "Count: %d/%d" %(query.offset(), query.total_count())
         
-        for obj in objects:
-          obj = resource_cache.resource_class(client.server, obj)
+      for obj in objects:
+        obj = resource_cache.resource_class(client.server, obj)
 
-          if not compiled_output:
-            compiled_output = client.compile_output(output, obj)
+        if not output:
+          output = client.default_output(obj)
+          
+        if not output_sane:
+          output_sane = client.sane_output(output, obj)
+
+        if not output_format:
+          output_format = client.generate_output_format(output_sane)
+        
+
+        if not compiled_output:
+          compiled_output = client.compile_output(output_sane, obj)
        
-          if args.dump_object:
-            client.dump_object(obj)
+        if args.dump and 'object' in args.dump:
+          client.dump_object(obj)
 
-          print output_format % eval(compiled_output)
+        print output_format % eval(compiled_output)
 
-    except KeyboardInterrupt:
-      print "Uh oh."
-      raise KeyboardInterrupt
+  except KeyboardInterrupt:
+    print "Uh oh."
+    raise KeyboardInterrupt
 
 except KeyboardInterrupt:
   print "^C"
+  exit(1)
+
 exit(0)
 
 
