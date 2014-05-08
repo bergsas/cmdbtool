@@ -138,6 +138,9 @@ try:
       for obj in objects:
         obj = resource_cache.resource_class(client.server, obj)
 
+        if args.dump and 'object' in args.dump:
+          client.dump_object(obj)
+
         if not output:
           output = client.default_output(obj)
           
@@ -150,9 +153,10 @@ try:
 
         if not compiled_output:
           compiled_output = client.compile_output(output_sane, obj)
-       
-        if args.dump and 'object' in args.dump:
-          client.dump_object(obj)
+          if not compiled_output:
+            print "Nothing to output"
+            exit(1)
+
 
         print output_format % eval(compiled_output)
 

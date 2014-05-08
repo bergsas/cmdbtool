@@ -134,19 +134,21 @@ class CMDB:
         except Exception, e:
           if n in obj._attrs._attrs:
             out = obj._attrs._attrs[n]
-            print obj._cmdb_server._get_dict(obj._cmdb_server._server + out)
+            #print obj._cmdb_server._get_dict(obj._cmdb_server._server + out)
           else:
             out = e
         # Print attribute
         try:
-          print "%s%-*s %s" %(ident, maxlen, str(n) + ":", out)
+          if isinstance(out, Resource):
+            print "%s%-*s" %(ident, maxlen, str(n) + ":")
+            self.dump_object(out, "  %s" %(ident))
+          else:
+            print "%s%-*s %s" %(ident, maxlen, str(n) + ":", out)
         except UnicodeEncodeError, e:
           print "%s%-*s %s" %(ident, maxlen, str(n) + ":",  self.unicode_fallback(out))
           print "%s%-*s ^^^ ERRORNEOUS OUTPUT: Mangled" %(ident, maxlen, "")
 
         # If attribute is a Resource object, dump that resource object as well
-        if isinstance(out, Resource):
-          self.dump_object(out, "  %s" %(ident))
 
     def resolve_object(self, obj, attr = None):
       if attr == None:
@@ -164,23 +166,49 @@ class CMDB:
       sane = []
       cached = self.cache_resource(obj.resource_name)
       
-      for attr in output:
-        try:
-          val = getattr(obj, attr)
-          
-          if isinstance(val, Resource):
-            sane += [[attr, '_display_name']]
-          else:
-            if isinstance(val, list):
-              if  cached.resource_schema[attr]['type'] == 'related':
-                # may be implemented: namely: a recursion into these.
-                continue
+#        if not isinstance(attr, list):
+#          attr = [attr]
+#        try:
+#          for key in attr:
+#            val = getattr(obj, key)
+#          
+#            if isinstance(val, Resource):
+#              sane += [[key, '_display_name']]
+#            else:
+#              if isinstance(val, list):
+#                if  cached.resource_schema[attr]['type'] == 'related':
+#                  # may be implemented: namely: a recursion into these.
+#                  continue
+#        
+#        except MissingImplementation:
+#          continue
+#          #print "blurp"
 
-            sane +=[attr]
+      for attr in output:
+        val = obj
+        
+        
+        if not isinstance(attr, list):
+          keylist = [attr]
+        else:
+          keylist = attr[:]
+
+        try:
+          for key in keylist:
+            val = getattr(val, key)
         
         except MissingImplementation:
+          dummy = True  #  :)
+
+        except AttributeError, e:
           continue
-          #print "blurp"
+
+        if isinstance(val, Resource):
+          keylist += ['_display_name']
+
+
+        sane += [keylist]
+
 
       return sane
 
@@ -193,22 +221,31 @@ class CMDB:
      
       cached = self.cache_resource(obj.resource_name)
       for attr in output:
-        if isinstance(attr, list):
-          this_obj = obj
+        if not isinstance(attr, list):
+          attr = [attr]
+
+        build = []
+        this_obj = obj
+        try:
           for this_attr in attr:
             if this_attr in this_obj.required_attrs or this_attr in this_obj.optional_attrs or this_attr == '_display_name':
               this_obj = getattr(this_obj, this_attr)
+              build += [this_attr]
             else:
               print "Die die die! No such attr in %s: %s" %(this_obj.resource_name, this_attr)
               exit(1)
-          compiled += ["obj." + ".".join(attr)]
-        else:
-          if not (attr in obj.required_attrs or attr in obj.optional_attrs or attr == '_display_name'):
-            print "Die die die! No such attr in %s: %s" %(obj.resource_name, attr)
-            exit(1)
-          compiled += ["obj." + attr]
+        # Hacky ways are, well, my way.
+        except MissingImplementation, e:
+          if this_attr in this_obj._attrs.__dict__["_attrs"]:
+            build += ['_attrs','__dict__["_attrs"]["%s"]' %(this_attr)]
+
+        compiled += ["obj." + ".".join(build)]
       # EVAL!!! EVIL AND DANGEROUS HACK. HACK HACK HACK.
-      return compile(', '.join(compiled), '<string>', 'eval')
+     
+      if compiled:
+        return compile(', '.join(compiled), '<string>', 'eval')
+      
+      return None
 
     # operator: [case sensitive, case insensitive]
 
