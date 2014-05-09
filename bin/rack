@@ -49,7 +49,11 @@ except KeyboardInterrupt:
 
 # Program: begin!
 def __main__():
-  print_rack(leftover)
+  try:
+    print_rack(leftover)
+  except KeyboardInterrupt:
+    print "^c"
+    exit(1)
 
 # Print rack
 def print_rack(leftover):
@@ -98,7 +102,15 @@ def print_rack(leftover):
                 reverse_names[item_id] = host_object['name']
               break # Return after first hit :)
             
-          print "%s: %s (%s)" %(orig_rackunit_obj['ruid'], rackunit_obj.item.serial, reverse_names[item_id])
+          
+          print "%s%s: %s (%s): %s (%s)" %(
+            rackunit_obj.rack.name,
+            rackunit_obj.ruid, 
+            rackunit_obj.item.serial, 
+            reverse_names[item_id],
+            rackunit_obj.item.itemmodel.name,
+            rackunit_obj.item.itemmodel.type.name
+            )
 
 
 __main__()
