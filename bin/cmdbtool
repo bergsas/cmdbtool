@@ -7,11 +7,14 @@ except Exception, e:
   exit(1)
 
 try:
+  import os
   from argparse import ArgumentParser
   import inspect
   import re
   import codecs
   import unicodedata
+
+  sys.path.append("%s/.." %(os.path.dirname(os.path.abspath(__file__)))) # Ho ho ho!
   from libcmdb2.core import CMDBServer, resources
   from libcmdb2.resources.common import Resource
 

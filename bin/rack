@@ -1,0 +1,122 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+import sys
+import os
+
+
+# Comments are for sissies.
+# This is not done yet.
+
+sys.path.append("%s/.." %(os.path.dirname(os.path.abspath(__file__)))) # Ho ho ho!
+
+from argparse import ArgumentParser
+from libcmdb2.core import CMDBServer
+
+from cmdbtool import *
+
+#parser.add_argument("-r", "--resource", type=str, metavar="resource", help="Lookup specified resource.")
+
+
+parser = ArgumentParser(description='Rack tool')
+#parser.add_argument("--rack", type=str, metavar="rack")
+#parser.add_argument("--units", "-u", type=str)
+parser.add_argument("-D", "--dump", action='append', metavar="dump")
+
+args, leftover = parser.parse_known_args()
+try:
+  client = CMDB.Client('http://cmdb.met.no', '/api/v2/')
+
+  rackunit_resource_name = 'rackunit'
+  rackunit_resource = client.cache_resource(rackunit_resource_name)
+  rackunit_class = rackunit_resource.resource_class
+
+  rack_resource_name = 'rack'
+  rack_resource = client.cache_resource(rack_resource_name)
+  rack_class = rack_resource.resource_class
+
+  host_resource_name = 'host'
+  host_resource = client.cache_resource(host_resource_name)
+  host_class = host_resource.resource_class
+  
+  item_resource_name = 'item'
+  item_resource = client.cache_resource(item_resource_name)
+  item_class = item_resource.resource_class
+
+except KeyboardInterrupt:
+  print '^C'
+  exit(1)
+
+
+# Program: begin!
+def __main__():
+  print_rack(leftover)
+
+# Print rack
+def print_rack(leftover):
+  for rack in leftover:
+    rack_search = client.init_basic_search(rack_resource_name, ['name===%s'%(rack)]) 
+    rack_query = client.new_query(rack_resource_name, **rack_search)
+    rack_objects = True
+    while rack_objects:
+      rack_objects = rack_query.object_query()
+      if not rack_objects:
+        break
+      for rack_obj in rack_objects:
+        rack_obj = rack_class(client.server, rack_obj)
+        if args.dump and 'rack' in args.dump:
+          print "*** start rack dump: %s" %(rack_obj)
+          client.dump_object(rack_obj) 
+          print "*** stop rack dump"
+
+      rackunit_search = client.init_basic_search(rackunit_resource_name, ['rack.id===%s'%(rack_obj.id)])
+      rackunit_query = client.new_query(rackunit_resource_name, **rackunit_search)
+      rackunit_objects = True
+      reverse_names = {}
+      while rackunit_objects:
+        rackunit_objects = rackunit_query.object_query()
+      
+        if not rackunit_objects:
+          break
+
+        for rackunit_obj in rackunit_objects:
+          orig_rackunit_obj = rackunit_obj
+          rackunit_obj = rackunit_class(client.server, rackunit_obj)
+          item_id = rackunit_obj.item.id
+
+          if args.dump and 'rackunit' in args.dump:
+            print "### start rackunit dump: %s" %(rackunit_obj)
+            client.dump_object(rackunit_obj)
+            print "### stop rackunit dump"
+
+          if not item_id in reverse_names:
+            host_search = client.init_basic_search(host_resource_name, ['item.id===%s'%(item_id)])
+            host_query = client.new_query(host_resource_name, **host_search)
+            host_objects = host_query.object_query()
+            reverse_names[item_id] = None
+            for host_object in host_objects:
+              if 'name' in host_object:
+                reverse_names[item_id] = host_object['name']
+              break # Return after first hit :)
+            
+          print "%s: %s (%s)" %(orig_rackunit_obj['ruid'], rackunit_obj.item.serial, reverse_names[item_id])
+
+
+__main__()
+
+
+
+  #search = client.init_basic_search(resource, leftover)
+  #query = client.new_query(resource, **search)
+  #query.set_limit = args.query_limit
+  #query.set_offset = args.query_offset
+   
+  #while objects:
+  #    objects = query.object_query()
+  #    # Ugh I wish I could do "while objects = ..."
+  #    if not isinstance(objects, list):
+  #      break
+  #    for obj in objects:
+  #      obj = resource_cache.resource_class(client.server, obj)
+  #      if args.dump and 'object' in args.dump:
+  #        client.dump_object(obj)
+# vim: syntax=python
