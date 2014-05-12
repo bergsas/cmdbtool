@@ -23,6 +23,7 @@ parser = ArgumentParser(description='Rack tool')
 #parser.add_argument("--units", "-u", type=str)
 parser.add_argument("-D", "--dump", action='append')
 parser.add_argument("-n", "--no-reverse", dest='reverse', action='store_false', default=True,  help="Don't resolve rack items's hostnames.")
+parser.add_argument("-i", "--informative", action="store_true", default=False, help="Print info about each rack, in addition to rack overview")
 
 #parser.add_argument("-r", "--resource", type=str, metavar="resource", help="Lookup specified resource.")
 #parser.add_argument("-F", "--follow", help="Follow resources recursively", action="store_true")
@@ -33,20 +34,9 @@ try:
   client = CMDB.Client('http://cmdb.met.no', '/api/v2/')
   
   rackunit_resource_name = 'rackunit'
-  rackunit_resource = client.cache_resource(rackunit_resource_name)
-  rackunit_class = rackunit_resource.resource_class
-
   rack_resource_name = 'rack'
-  rack_resource = client.cache_resource(rack_resource_name)
-  rack_class = rack_resource.resource_class
-
   host_resource_name = 'host'
-  host_resource = client.cache_resource(host_resource_name)
-  host_class = host_resource.resource_class
-  
   item_resource_name = 'item'
-  item_resource = client.cache_resource(item_resource_name)
-  item_class = item_resource.resource_class
 
 except KeyboardInterrupt:
   print '^C'
@@ -56,93 +46,122 @@ except KeyboardInterrupt:
 # Program: begin!
 def __main__():
   try:
+    racks = {}
     for rack in leftover:
-      rack_search = client.init_basic_search(rack_resource_name, ['name===%s'%(rack)]) 
-      rack_query = client.new_query(rack_resource_name, **rack_search)
-      rack_objects = True
+      racks[rack] = get_rack(client, rack)
+  
+    # Reverse lookup stuff.
+    items = {}
+    widths = {}
+    racksize = 0
 
-      while rack_objects:
-        rack_objects = rack_query.object_query()
+    for rack in leftover:
+      if 'itemmodel' in racks[rack]['info'] and 'size' in racks[rack]['info']['itemmodel']:
+        thissize = racks[rack]['info']['itemmodel']['size']
+        if thissize > racksize:
+          racksize = thissize
+
+      widths[rack] = 0
+      
+      for rackpos,rackunit in racks[rack]['units'].items():
+        item_id = rackunit['item']['id']
+        if args.reverse and not item_id in items:
+          items[item_id] = reverse_item(client, item_id)
+        
+        if items[item_id]:
+          racks[rack]['units'][rackpos]['display'] = items[item_id]
+          width = len(items[item_id]) 
+          if widths[rack] < width:
+            widths[rack] = width
+        
+        else:
+          racks[rack]['units'][rackpos]['display'] = rackunit['item']['itemmodel']['name']
        
-        if not rack_objects:
-          break
+    # Calculate width
+    total = 0
+    formater = []
+    for size in widths.values():
+      formater += ["%%-%d.%ds" %(size +3,size +3)]
+      total += size + 3
 
-        for rack_obj in rack_objects:
-          if args.dump and 'rack_json' in args.dump:
-            print "*** dump rack_sjon:"
-            print json.dumps(rack_obj, indent=2)
-            print "***"
+    formater = '|'.join(formater)
 
-          rack_obj = rack_class(client.server, rack_obj)
-          
-          if args.dump and 'rack' in args.dump:
-            print "*** dump rack:"
-            client.dump_object(rack_obj) 
-            print "*** stop rack dump"
-          
-          rackunit_search = client.init_basic_search(rackunit_resource_name, ['rack.id===%s'%(rack_obj.id)])
-          #print_rack_query(client,client.new_query(rackunit_resource_name, **rackunit_search))
-          print_rack_query_haxxs(client,client.new_query(rackunit_resource_name, **rackunit_search))
+    print ("   |"+formater)%tuple(leftover)
+    formater = "%2d |" + formater
+    print ""    
+    for row in range(racksize, 0, -1):
+      rowunits = []
+      for rack in leftover:
+        ru = racks[rack]['units'].get(row, None)
+        if not ru:
+          rowunits += ['']
+          continue
+        rowunits += [ru['display']]
+      print formater%tuple([row] + rowunits)
 
   except KeyboardInterrupt:
     print "^c"
-    exit(1)
 
-def print_rack_query_haxxs(client, query):
-  reverse_names = {}
+
+    # Paint rack canvas. :)
+    # Sizes
+
+def get_rack(client, rack):
+  rack_search = client.init_basic_search(rack_resource_name, ['name===%s'%(rack)]) 
+  rack_query = client.new_query(rack_resource_name, **rack_search)
+  rack_objects = True
+
+  while rack_objects:
+    rack_objects = rack_query.object_query()
+       
+    if not rack_objects:
+      break
+
+    for rack_obj in rack_objects:
+      if args.dump and 'rack' in args.dump:
+        print "*** dump rack:"
+        print json.dumps(rack_obj, indent=2)
+        print "***"
+          
+      rackinfo = client.get_dict(rack_obj['item'], -1)
+      if args.dump and 'rackinfo' in args.dump:
+        print json.dumps(rackinfo, indent=2)
+
+      rackunit_search = client.init_basic_search(rackunit_resource_name, ['rack.id===%s'%(rack_obj['id'])])
+      return {
+        'info': rackinfo,
+        'units': get_rackunits(client,client.new_query(rackunit_resource_name, **rackunit_search))
+      }
+
+def get_rackunits(client, query):
   objects = True
+  rack = {}
   while objects:
     objects = query.object_query()
 
     if not objects:
       break
 
-    reverse = {}
-
+    # These should probably be references in a better
+    #   manner. Oh well. 
     for obj in objects:
-      item_dict = client.get_dict(obj['item'], -1)
-      rack_dict = client.get_dict(obj['rack'], -1)
+      obj['item'] = client.get_dict(obj['item'], -1)
+      obj['rack'] = client.get_dict(obj['rack'], -1)
+      obj['width'] = 0  # HACKYKYK
       if args.dump and 'item_json' in args.dump:
-        print json.dumps(item_dict, indent=2)
+        print json.dumps(obj['item'], indent=2)
 
-      # Reverse, baby. :)
-      if not item_dict['id'] in reverse:
-        reverse[item_dict['id']] = None
-        host_search = client.init_basic_search(host_resource_name, ['item.id===%s'%(item_dict['id'])])
-        host_query = client.new_query(host_resource_name, **host_search)
-        host_objects = host_query.object_query()
-        for host_object in host_objects:
-          if 'name' in host_object:
-            reverse[item_dict['id']] = host_object['name']
- 
-      print "%s%s %s (%s) %s (%s)" %(
-        rack_dict['name'],
-        obj['ruid'], 
-        
-        reverse[item_dict['id']],
-        item_dict['serial'], 
-        item_dict['itemmodel']['name'],
-        item_dict['itemmodel']['type']['name'])
+      rack[obj['ruid']] = obj
+  return rack
+  
 
-     
-
-
+def reverse_item(client, item):
+ host_search = client.init_basic_search(host_resource_name, ['item.id===%s'%(item)])
+ host_query = client.new_query(host_resource_name, **host_search)
+ host_objects = host_query.object_query()
+ for host_object in host_objects:
+   if 'name' in host_object:
+     return host_object['name']
+ return None
 __main__()
-
-
-
-  #search = client.init_basic_search(resource, leftover)
-  #query = client.new_query(resource, **search)
-  #query.set_limit = args.query_limit
-  #query.set_offset = args.query_offset
-   
-  #while objects:
-  #    objects = query.object_query()
-  #    # Ugh I wish I could do "while objects = ..."
-  #    if not isinstance(objects, list):
-  #      break
-  #    for obj in objects:
-  #      obj = resource_cache.resource_class(client.server, obj)
-  #      if args.dump and 'object' in args.dump:
-  #        client.dump_object(obj)
 # vim: syntax=python
