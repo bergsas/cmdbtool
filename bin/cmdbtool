@@ -13,6 +13,7 @@ try:
   import re
   import codecs
   import unicodedata
+  import json
 
   sys.path.append("%s/.." %(os.path.dirname(os.path.abspath(__file__)))) # Ho ho ho!
   from libcmdb2.core import CMDBServer, resources
@@ -51,12 +52,19 @@ parser.add_argument("-c", "--count", help="Print count", action="store_true")
 parser.add_argument("--query-limit", help="cmdb ''query limit''", type=int)
 parser.add_argument("--query-offset", help="cmdb ''query offset''", type=int)
 parser.add_argument("-D", "--dump", action="append", help="Dump ''resource'', ''api-base'', ''flt'', ''object'', etc.")
+parser.add_argument("-d", "--dict-dump", action="append", dest="dict_dump", help="Dump api objects.")
 
 args, leftover = parser.parse_known_args()
 
 ###
 # Program: begin!
 client = CMDB.Client('http://cmdb.met.no', '/api/v2/')
+
+# Dump return from 
+if args.dict_dump:
+  for stuff in args.dict_dump:
+    print json.dumps(client.get_dict(stuff, 3), indent=2)
+  exit(0) 
 
 resource = args.resource
 if resource == None:

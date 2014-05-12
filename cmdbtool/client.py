@@ -90,6 +90,7 @@ class CMDB:
       self.resources = resources 
       self.resource_cache = {}
       self.field_lookup_types = self.server.field_lookup_types
+      self.dict_cache = {}
 
     #def __repr__(self):
     #  return str(self.server._server)
@@ -149,11 +150,29 @@ class CMDB:
           print "%s%-*s ^^^ ERRORNEOUS OUTPUT: Mangled" %(ident, maxlen, "")
 
         # If attribute is a Resource object, dump that resource object as well
+    
+    # Simply return a dict based on a uri.
+    #   Cache the dicts. :)
 
-    def resolve_object(self, obj, attr = None):
-      if attr == None:
-        print attr
-   
+    def get_dict(self, obj_uri, recurse = 0):
+      if obj_uri in self.dict_cache:
+        return self.dict_cache[obj_uri]
+     
+      self.dict_cache[obj_uri] = None # Placeholder to prevent recursion
+
+      this = self.server._get_dict(self.server._server + obj_uri)
+      
+      if recurse > 0 or recurse < 0:
+        recurse -= 1
+        for key, item in this.items():
+          if isinstance(item, basestring) and re.match("^/api/", item):
+            val = self.get_dict(item, recurse)
+            if val: 
+              this[key] = val
+      
+      self.dict_cache[obj_uri] = this
+      return this
+
     def default_output(self, obj):
       cr = self.cache_resource(obj.resource_name)
       output = cr.required_attrs[:]
