@@ -56,6 +56,13 @@ def __main__():
     racksize = 0
 
     for rack in leftover:
+      if not racks[rack]:
+        continue
+
+      if not racks[rack]['info'] or not racks[rack]['info']['itemmodel']:
+        if 42 > racksize:
+          racksize = 42
+
       if 'itemmodel' in racks[rack]['info'] and 'size' in racks[rack]['info']['itemmodel']:
         thissize = racks[rack]['info']['itemmodel']['size']
         if thissize > racksize:
@@ -124,6 +131,10 @@ def get_rack(client, rack):
         print "***"
           
       rackinfo = client.get_dict(rack_obj['item'], -1)
+      
+      if not rackinfo:
+        continue
+
       if args.dump and 'rackinfo' in args.dump:
         print json.dumps(rackinfo, indent=2)
 
@@ -146,7 +157,11 @@ def get_rackunits(client, query):
     #   manner. Oh well. 
     for obj in objects:
       obj['item'] = client.get_dict(obj['item'], -1)
+      if not obj['item']:
+        obj['item'] = {}
       obj['rack'] = client.get_dict(obj['rack'], -1)
+      if not obj['rack']:
+        obj['rack'] = {}
       obj['width'] = 0  # HACKYKYK
       if args.dump and 'item_json' in args.dump:
         print json.dumps(obj['item'], indent=2)

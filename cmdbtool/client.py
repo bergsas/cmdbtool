@@ -160,8 +160,11 @@ class CMDB:
      
       self.dict_cache[obj_uri] = None # Placeholder to prevent recursion
 
-      this = self.server._get_dict(self.server._server + obj_uri)
-      
+      try:
+        this = self.server._get_dict(self.server._server + obj_uri)
+      except ServerError:
+        return None
+
       if recurse > 0 or recurse < 0:
         recurse -= 1
         for key, item in this.items():
