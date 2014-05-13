@@ -24,6 +24,9 @@ parser = ArgumentParser(description='Rack tool')
 parser.add_argument("-D", "--dump", action='append')
 parser.add_argument("-n", "--no-reverse", dest='reverse', action='store_false', default=True,  help="Don't resolve rack items's hostnames.")
 parser.add_argument("-i", "--informative", action="store_true", default=False, help="Print info about each rack, in addition to rack overview")
+parser.add_argument("-H", "--host", action="store_true", default=False, help="Lookup rackunit by host name rather than serial or whatever")
+parser.add_argument("-s", "--search", action='store_true', default=False)
+
 
 #parser.add_argument("-r", "--resource", type=str, metavar="resource", help="Lookup specified resource.")
 #parser.add_argument("-F", "--follow", help="Follow resources recursively", action="store_true")
@@ -45,6 +48,78 @@ except KeyboardInterrupt:
 
 # Program: begin!
 def __main__():
+  if args.search:
+    search_mode(client, leftover)
+  else:
+    rack_mode(client, leftover)
+
+def search_mode(client, leftover):
+  try:
+    # First: search using item....
+    
+    #rackunit_search = client.init_basic_search(rackunit_resource_name, ['rack.id===%s'%(rack_obj['id'])])
+    reverse = {}
+
+    if args.host:
+      rackunits = {}
+      search = client.init_basic_search(host_resource_name, leftover)
+      hosts = get_hosts(client, client.new_query(host_resource_name, **search), 2)
+      if args.dump and 'hosts' in args.dump:
+        print "*** dump hosts:"
+        print json.dumps(hosts, indent=2)
+        print "***"
+
+      if not hosts:
+        print "No hosts found"
+        exit(1)
+
+      # Compose searches using item id. :)
+      for item_id,info in hosts.items():
+        search = client.init_basic_search(rackunit_resource_name, ['item.id===%s'%(item_id)])
+        this_rackunits = get_rackunits(client, client.new_query(rackunit_resource_name, **search), 1)
+        if not this_rackunits:
+          continue
+
+        for rackunit,item in this_rackunits.items():
+          if not rackunit in rackunits:
+            reverse[item_id] = info
+            rackunits[rackunit] = item
+    else:
+      search = client.init_basic_search(rackunit_resource_name, leftover)
+      rackunits = get_rackunits(client, client.new_query(rackunit_resource_name, **search), 1)
+    
+    if args.dump and 'rackunits' in args.dump:
+      print "*** dump rackunits:"
+      print json.dumps(rackunits, indent=2)
+      print "***"
+ 
+    if not rackunits:
+      print "No rackunits found"
+      exit(1)
+
+    for rackunit,item in rackunits.items():
+      if reverse:
+        this_rev = reverse[item['item']['id']]['name']
+      elif args.reverse:
+        this_rev = get_reverse(item['item']['id'])
+      else:
+        this_rev= None
+
+      print "%s-%s %s (%s) %s (%s)" %(
+        item['rack']['name'], rackunit, 
+        this_rev,
+        item['item']['serial'], 
+        item['item']['itemmodel']['name'],
+        item['item']['itemmodel']['type']['name']
+      )
+
+
+  except KeyboardInterrupt:
+    print "^C"
+    exit(1)
+
+
+def rack_mode(client, leftover):
   try:
     racks = {}
     for rack in leftover:
@@ -75,16 +150,17 @@ def __main__():
         if args.reverse and not item_id in items:
           items[item_id] = reverse_item(client, item_id)
         
-        if items[item_id]:
+        if item_id in items and items[item_id]:
           racks[rack]['units'][rackpos]['display'] = items[item_id]
-          width = len(items[item_id]) 
-          if widths[rack] < width:
-            widths[rack] = width
-        
         else:
-          racks[rack]['units'][rackpos]['display'] = rackunit['item']['itemmodel']['name']
+          #racks[rack]['units'][rackpos]['display'] = rackunit['item']['itemmodel']['name']
+          racks[rack]['units'][rackpos]['display'] = rackunit['item']['serial']
+
+        width = len(racks[rack]['units'][rackpos]['display'])
+        if widths[rack] < width:
+          widths[rack] = width
        
-    # Calculate width
+    # Calculate width of "all" racks
     total = 0
     formater = []
     for size in widths.values():
@@ -144,7 +220,7 @@ def get_rack(client, rack):
         'units': get_rackunits(client,client.new_query(rackunit_resource_name, **rackunit_search))
       }
 
-def get_rackunits(client, query):
+def get_rackunits(client, query, recurse = -1):
   objects = True
   rack = {}
   while objects:
@@ -156,19 +232,44 @@ def get_rackunits(client, query):
     # These should probably be references in a better
     #   manner. Oh well. 
     for obj in objects:
-      obj['item'] = client.get_dict(obj['item'], -1)
+      if args.dump and 'rackunit' in args.dump:
+        print json.dumps(obj, indent=2)
+
+      obj['item'] = client.get_dict(obj['item'], recurse)
       if not obj['item']:
         obj['item'] = {}
-      obj['rack'] = client.get_dict(obj['rack'], -1)
+      obj['rack'] = client.get_dict(obj['rack'], recurse)
       if not obj['rack']:
         obj['rack'] = {}
       obj['width'] = 0  # HACKYKYK
+
       if args.dump and 'item_json' in args.dump:
         print json.dumps(obj['item'], indent=2)
 
       rack[obj['ruid']] = obj
   return rack
-  
+
+def get_hosts(client, query, recurse = -1):
+  objects = True
+  hosts = {}
+  while objects:
+    objects = query.object_query()
+
+    if not objects:
+      break
+
+    # These should probably be references in a better
+    #   manner. Oh well. 
+    for obj in objects:
+      obj['item'] = client.get_dict(obj['item'], recurse)
+      if not obj['item']:
+        obj['item'] = {}
+
+      # Only return host if 'item' 'id' is known. Oh well.
+      if 'id' in obj['item']:
+        hosts[obj['item']['id']] = obj
+  return hosts
+
 
 def reverse_item(client, item):
  host_search = client.init_basic_search(host_resource_name, ['item.id===%s'%(item)])
