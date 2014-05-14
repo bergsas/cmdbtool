@@ -15,7 +15,7 @@ try:
   import unicodedata
   import json
 
-  sys.path.append("%s/.." %(os.path.dirname(os.path.abspath(__file__)))) # Ho ho ho!
+  sys.path.append("%s/.." %(os.path.dirname(os.path.realpath(os.path.abspath(__file__))))) # Ho ho ho!
   from libcmdb2.core import CMDBServer, resources
   from libcmdb2.resources.common import Resource
 

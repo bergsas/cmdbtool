@@ -6,9 +6,8 @@ import json
 
 
 # Comments are for sissies.
-# This is not done yet.
-
-sys.path.append("%s/.." %(os.path.dirname(os.path.abspath(__file__)))) # Ho ho ho!
+# This tool is not finished yet.
+sys.path.append("%s/.." %(os.path.dirname(os.path.realpath(os.path.abspath(__file__))))) # Ho ho ho!
 
 from argparse import ArgumentParser
 from libcmdb2.core import CMDBServer
