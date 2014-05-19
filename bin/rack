@@ -100,7 +100,7 @@ def search_mode(client, leftover):
       if reverse:
         this_rev = reverse[item['item']['id']]['name']
       elif args.reverse:
-        this_rev = get_reverse_items(item['item']['id'])
+        this_rev = get_reverse_item(item['item']['id'])
       else:
         this_rev= None
 
