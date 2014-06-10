@@ -175,9 +175,13 @@ class CMDB:
         try:
           for key in keylist:
             val = getattr(val, key)
-        
+
         except MissingImplementation:
           dummy = True  #  :)
+        
+        #libcmdb2.resources.common.RequiredAttributeMissingError: 'durationnormal' missing!
+        except resources.common.RequiredAttributeMissingError:
+          dummy = True # :)
 
         except AttributeError, e:
           continue
@@ -215,6 +219,10 @@ class CMDB:
               exit(1)
         # Hacky ways are, well, my way.
         except MissingImplementation, e:
+          if this_attr in this_obj._attrs.__dict__["_attrs"]:
+            build += ['_attrs','__dict__["_attrs"]["%s"]' %(this_attr)]
+
+        except resources.common.RequiredAttributeMissingError:
           if this_attr in this_obj._attrs.__dict__["_attrs"]:
             build += ['_attrs','__dict__["_attrs"]["%s"]' %(this_attr)]
 
