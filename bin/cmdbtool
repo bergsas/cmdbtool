@@ -177,11 +177,18 @@ try:
 
         if not compiled_output:
           compiled_output = client.compile_output(output_sane, obj)
+          
           if not compiled_output:
             print "Nothing to output"
             exit(1)
 
-        print output_format % eval(compiled_output)
+        try:
+          print output_format % eval(compiled_output)
+        
+        # ugh. :(
+        except UnicodeEncodeError:
+          print client.unicode_fallback(unicode(output_format % eval(compiled_output)))
+      
       client.tq()
 
   except KeyboardInterrupt:
