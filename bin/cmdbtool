@@ -53,12 +53,19 @@ parser.add_argument("--query-limit", help="cmdb ''query limit''", type=int)
 parser.add_argument("--query-offset", help="cmdb ''query offset''", type=int)
 parser.add_argument("-D", "--dump", action="append", help="Dump ''resource'', ''api-base'', ''flt'', ''object'', etc.")
 parser.add_argument("-d", "--dict-dump", action="append", dest="dict_dump", help="Dump api objects.")
+parser.add_argument("-X", "--xdebug", action="append")
 
 args, leftover = parser.parse_known_args()
 
 ###
 # Program: begin!
-client = CMDB.Client('http://cmdb.met.no', '/api/v2/')
+
+client = CMDB.Client(None)
+if args.xdebug:
+  client.xdebug(args.xdebug)
+client.__init__('http://cmdb.met.no/api/v2/')
+
+#client = CMDB.Client('http://cmdb.met.no', '/api/v2/')
 
 # Dump return from 
 if args.dict_dump:
@@ -145,7 +152,8 @@ try:
         
       if args.count:
         print "Count: %d/%d" %(query.offset(), query.total_count())
-        
+      
+      client.tq("printing some ''objects''")
       for obj in objects:
         obj = resource_cache.resource_class(client.server, obj)
 
@@ -168,8 +176,8 @@ try:
             print "Nothing to output"
             exit(1)
 
-
         print output_format % eval(compiled_output)
+      client.tq()
 
   except KeyboardInterrupt:
     print "Uh oh."

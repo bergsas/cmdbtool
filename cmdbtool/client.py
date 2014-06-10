@@ -2,98 +2,50 @@
 import re
 import codecs
 import unicodedata
+import time
 from libcmdb2.exceptions import *
 from libcmdb2.core import CMDBServer, resources
 from libcmdb2.resources.common import Resource
 
 class CMDB:
   class Client(object):
-    class ResourceCache:
-      def __init__(self, client, resource_name):
-        self.client = client
-        self.resource_name = resource_name
-        self.resource_class = client.resources.get_class_for(resource_name)
-        self.pk = self.resource_class.pk
-        self.resource_schema = client.server.resource_schema(resource_name)
-        self.display_name = self.resource_class.display_name_attrs
-        self.required_attrs = self.resource_class.required_attrs
-        self.optional_attrs = self.resource_class.optional_attrs
-
-      def __repr__(self):
-        return self.resource_name
-
-    class Query:
-      def __init__(self, client, resource):
-        self.client = client
-        self.resource = resource
-        self.set_limit = None
-        self.set_offset = None
-        self.query = None
-        self.uri = None
-
-        self.json = None
-
-        self.ready = False
+    def __init__(self, server, api_path = None, user = None, api_key = None):
+      self.tq_time = None
+      self.tq_string = None
+      # HACK!
+      self.timed_queries = getattr(self, 'timed_queries', False)
+      #self.timed_queries = False     
+      if not server:
+        return
       
-      def make_ready(self):
-        if self.query is None:
-          self.uri = self.client.server._make_uri(self.resource)
-        else:
-          self.uri = self.client.server._make_uri(self.resource, **self.query)
-        
-        if not self.set_limit is None:
-          if re.match('.*\?.*', self.uri):
-            self.uri += "&limit=%d" %(self.set_limit)
-          else:
-            self.uri += "?limit=%d" %(self.set_limit)
- 
-        if not self.set_offset is None:
-          if re.match('.*\?.*', self.uri):
-            self.uri += "&offset=%d" %(self.set_offset)
-          else:
-            self.uri += "?offset=%d" %(self.set_offset)
+      # "Cheating": allow simple use of url for server init.
+      if not api_path:
+        match = re.match("(^.*://[^/]+)(/.*$)", server) 
+        if match:
+          server = match.group(1)
+          api_path = match.group(2)
 
-      def object_query (self):
-        if self.uri is None:
-          self.make_ready()
-
-        if self.uri is False:
-          return False
-
-        self._dict = self.client.server._get_dict(self.uri)
-        
-        if 'next' in self._dict['meta'] and self._dict['meta']['next']:
-          self.uri = self.client.server._server + self._dict['meta']['next']
-        else:
-          self.uri = False
-
-        return self._dict['objects']
-     
-      def offset(self):
-        return self._dict['meta']['offset']
-
-      def limit(self):
-        return self._dict['meta']['limit']
-
-      def total_count(self):
-        return self._dict['meta']['total_count']
-
-    def new_query(self, resource, **kwargs):
-      query = self.Query(self, resource)
-      query.query = kwargs
-      return query
-
-
-    def __init__(self, server, api_path, user = None, api_key = None):
       # Initiate server object
+      self.tq("initialising")
+
       self.server = CMDBServer(server, api_path, user, api_key)
       self.resources = resources 
       self.resource_cache = {}
       self.field_lookup_types = self.server.field_lookup_types
       self.dict_cache = {}
 
+      self.tq()
+
     #def __repr__(self):
     #  return str(self.server._server)
+
+    def xdebug(self, args):
+      self.timed_queries = 'timed_queries' in args or 'tq' in args
+       
+    def new_query(self, resource, **kwargs):
+      query = self.Query(self, resource)
+      query.query = kwargs
+      return query
 
     # Ugh
     def unicode_fallback(self, string):
@@ -159,6 +111,7 @@ class CMDB:
         return self.dict_cache[obj_uri]
      
       self.dict_cache[obj_uri] = None # Placeholder to prevent recursion
+      self.tq("query for %s (recursing: %d)" %(obj_uri, recurse))
 
       try:
         this = self.server._get_dict(self.server._server + obj_uri)
@@ -167,13 +120,17 @@ class CMDB:
 
       if recurse > 0 or recurse < 0:
         recurse -= 1
+        
         for key, item in this.items():
+          #print item.__class__
+          
           if isinstance(item, basestring) and re.match("^/api/", item):
             val = self.get_dict(item, recurse)
             if val: 
               this[key] = val
-      
       self.dict_cache[obj_uri] = this
+
+      self.tq()
       return this
 
     def default_output(self, obj):
@@ -343,5 +300,117 @@ class CMDB:
         dic['__'.join(var.split('.') + [self.search_operators[operator][case_insensitive]])] = data
 
       return dic
+
+
+    # A hacky way to time access to the server.
+    #   I know about 'timeit' and whatever. Shut up.
+   
+    # Use:
+    #   Initialize using:
+    #     tq("string")
+    #
+    #   End (and trigger output):
+    #     tq()
+    
+    def tq(self,value = None):
+      if not self.timed_queries:
+        return
+     
+      if not self.tq_time and value:
+        self.tq_string = value
+        self.tq_time = time.time()
+        return
+
+      if self.tq_time and not value:
+        print "*** %f time spent %s" %(time.time()-self.tq_time, self.tq_string)
+        self.tq_string = None
+        self.tq_time = None
+        return
+
+      return
+
+    class ResourceCache:
+      def __init__(self, client, resource_name):
         
+        self.client = client
+        self.client.tq("caching resource %s" %(resource_name))
+
+        self.resource_name = resource_name
+        self.resource_class = client.resources.get_class_for(resource_name)
+        self.pk = self.resource_class.pk
+        self.resource_schema = client.server.resource_schema(resource_name)
+        self.display_name = self.resource_class.display_name_attrs
+        self.required_attrs = self.resource_class.required_attrs
+        self.optional_attrs = self.resource_class.optional_attrs
+
+        self.client.tq()
+
+      def __repr__(self):
+        return self.resource_name
+
+    class Query:
+      def __init__(self, client, resource):
+        self.client = client
+        self.resource = resource
+        self.set_limit = None
+        self.set_offset = None
+        self.query = None
+        self.uri = None
+
+        self.json = None
+
+        self.ready = False
+      
+      def make_ready(self):
+        if self.query is None:
+          self.uri = self.client.server._make_uri(self.resource)
+        else:
+          self.uri = self.client.server._make_uri(self.resource, **self.query)
+        
+        if not self.set_limit is None:
+          if re.match('.*\?.*', self.uri):
+            self.uri += "&limit=%d" %(self.set_limit)
+          else:
+            self.uri += "?limit=%d" %(self.set_limit)
+ 
+        if not self.set_offset is None:
+          if re.match('.*\?.*', self.uri):
+            self.uri += "&offset=%d" %(self.set_offset)
+          else:
+            self.uri += "?offset=%d" %(self.set_offset)
+
+      def object_query (self):
+        if self.uri is None:
+          self.make_ready()
+
+        if self.uri is False:
+          return False
+
+        self.client.tq("query for %s" %(self.uri))
+        
+        self._dict = self.client.server._get_dict(self.uri)
+        
+        self.client.tq()
+
+        if 'next' in self._dict['meta'] and self._dict['meta']['next']:
+          self.uri = self.client.server._server + self._dict['meta']['next']
+        else:
+          self.uri = False
+
+        return self._dict['objects']
+    
+
+
+      def offset(self):
+        return self._dict['meta']['offset']
+
+      def limit(self):
+        return self._dict['meta']['limit']
+
+      def total_count(self):
+        return self._dict['meta']['total_count']
+
+
+
+
 # vim: syntax=python
