@@ -47,13 +47,10 @@ def make_my_output(query, obj, output, output_format):
   if not output:
     output = query.client.default_output(obj)
 
-  # Clean the output a bit. :) Ugh. Another hack.
-  clean_output = query.client.sane_output(output, obj)
-  
   if not output_format:
-    output_format = query.client.generate_output_format(clean_output)
+    output_format = query.client.generate_output_format(output)
 
-  compiled_output = query.client.compile_output(clean_output, obj)
+  compiled_output = query.client.compile_output(output, obj)
           
   if not compiled_output:
     print "Nothing to output"
@@ -82,8 +79,12 @@ def search_query(query, output, output_format, args):
       
     query.client.tq("printing some ''objects''")
 
+    if args.dump and ('query_result' in args.dump or 'qr' in args.dump or 'queryresult' in args.dump):
+      print objects
+
     for obj in objects:
-      obj = query.resource_class(query.client.server, obj)
+      if not args.no_resolution:
+        obj = query.resource_class(query.client.server, obj)
 
       if args.dump and 'object' in args.dump:
         query.client.dump_object(obj)
@@ -115,6 +116,8 @@ parser.add_argument("--query-limit", help="cmdb ''query limit''", type=int)
 parser.add_argument("--query-offset", help="cmdb ''query offset''", type=int)
 parser.add_argument("-D", "--dump", action="append", help="Dump ''resource'', ''api-base'', ''flt'', ''object'', etc.")
 parser.add_argument("-d", "--dict-dump", action="append", dest="dict_dump", help="Dump api objects.")
+parser.add_argument("-n", "--no-resolution", action="store_true", default=False, help="Don't use CMDB's resolver..")
+parser.add_argument("-R", "--resolver", action="store_true", default=False, help="Use a simple ''dict'' resolver. Don't rely on CMDB backend resolving stuff.")
 parser.add_argument("-X", "--xdebug", action="append")
 
 args, leftover = parser.parse_known_args()
@@ -127,12 +130,10 @@ if args.xdebug:
   client.xdebug(args.xdebug)
 client.__init__('http://cmdb.met.no/api/v2/')
 
-#client = CMDB.Client('http://cmdb.met.no', '/api/v2/')
-
 # Dump return from 
 if args.dict_dump:
   for stuff in args.dict_dump:
-    print json.dumps(client.get_dict(stuff, 3), indent=2)
+    print json.dumps(client.get_dict(stuff, -1), indent=2)
   exit(0) 
 
 resource = args.resource

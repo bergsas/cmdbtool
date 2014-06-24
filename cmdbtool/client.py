@@ -69,15 +69,6 @@ class CMDB:
       # If object resource isn't "cached", do so.
       cached = self.cache_resource(name)
 
-      #print cached.resource_schema
-      #for attr,item in cached.resource_schema.items():
-      #  for key,subitem in item.items():
-      #    try:
-      #      print "%s.%s => %s"%(attr, key, subitem)
-      #    except UnicodeEncodeError, e:
-      #      print "%s.%s => %s" %(attr,key,self.unicode_fallback(subitem))
-      #return
-
       # Max length of attribute name: For indentation
       maxlen = len(max(cached.required_attrs + cached.optional_attrs, key=len)) +1
 
@@ -87,7 +78,6 @@ class CMDB:
         except Exception, e:
           if n in obj._attrs._attrs:
             out = obj._attrs._attrs[n]
-            #print obj._cmdb_server._get_dict(obj._cmdb_server._server + out)
           else:
             out = e
         # Print attribute
@@ -105,35 +95,39 @@ class CMDB:
     
     # Simply return a dict based on a uri.
     #   Cache the dicts. :)
+    #   This may become expensive. Oh well. We'll fix that if it becomes a problem.
 
     def get_dict(self, obj_uri, recurse = 0):
       if obj_uri in self.dict_cache:
-        return self.dict_cache[obj_uri]
+        return self.dict_cache[obj_uri]['dict']
      
-      self.dict_cache[obj_uri] = None # Placeholder to prevent recursion
       self.tq("query for %s (recursing: %d)" %(obj_uri, recurse))
 
       try:
         this = self.server._get_dict(self.server._server + obj_uri)
       except ServerError:
         return None
+      self.dict_cache[obj_uri] = {'recurse': recurse, 'dict': None} 
 
       if recurse > 0 or recurse < 0:
         recurse -= 1
         
         for key, item in this.items():
-          #print item.__class__
           
           if isinstance(item, basestring) and re.match("^/api/", item):
             val = self.get_dict(item, recurse)
             if val: 
               this[key] = val
-      self.dict_cache[obj_uri] = this
+      
+      self.dict_cache[obj_uri]['dict'] = this
 
       self.tq()
       return this
 
     def default_output(self, obj):
+      if isinstance(obj, dict):
+        return obj.keys()
+
       cr = self.cache_resource(obj.resource_name)
       output = cr.required_attrs[:]
       # http://stackoverflow.com/questions/2612802/how-to-clone-or-copy-a-list-in-python
@@ -141,68 +135,11 @@ class CMDB:
       output = [cr.display_name] + output
       return output
 
-    def sane_output(self, output, obj):
-      sane = []
-      cached = self.cache_resource(obj.resource_name)
-      
-#        if not isinstance(attr, list):
-#          attr = [attr]
-#        try:
-#          for key in attr:
-#            val = getattr(obj, key)
-#          
-#            if isinstance(val, Resource):
-#              sane += [[key, '_display_name']]
-#            else:
-#              if isinstance(val, list):
-#                if  cached.resource_schema[attr]['type'] == 'related':
-#                  # may be implemented: namely: a recursion into these.
-#                  continue
-#        
-#        except MissingImplementation:
-#          continue
-#          #print "blurp"
-
-      for attr in output:
-        val = obj
-        
-        
-        if not isinstance(attr, list):
-          keylist = [attr]
-        else:
-          keylist = attr[:]
-
-        try:
-          for key in keylist:
-            val = getattr(val, key)
-
-        except MissingImplementation:
-          dummy = True  #  :)
-        
-        #libcmdb2.resources.common.RequiredAttributeMissingError: 'durationnormal' missing!
-        except resources.common.RequiredAttributeMissingError:
-          dummy = True # :)
-
-        except AttributeError, e:
-          continue
-
-        if isinstance(val, Resource):
-          keylist += ['_display_name']
-
-
-        sane += [keylist]
-
-
-      return sane
-
-
     def generate_output_format(self, output):
       return '\t'.join(['%s'] * len(output))
 
     def compile_output(self, output, obj):
       compiled = []
-     
-      cached = self.cache_resource(obj.resource_name)
       for attr in output:
         if not isinstance(attr, list):
           attr = [attr]
@@ -211,24 +148,31 @@ class CMDB:
         this_obj = obj
         try:
           for this_attr in attr:
-            if this_attr in this_obj.required_attrs or this_attr in this_obj.optional_attrs or this_attr == '_display_name':
-              this_obj = getattr(this_obj, this_attr)
-              build += [this_attr]
+            if isinstance(this_obj, dict):
+              if this_attr in this_obj:
+                this_obj = this_obj[this_attr]
+                build += '["%s"]'%(this_attr.replace("\"", "\\\"")) # Ahh, unsafe. :)
+              else:
+                raise Exception("Unknown key: %s for %s" %(this_attr, build))
             else:
-              print "Die die die! No such attr in %s: %s" %(this_obj.resource_name, this_attr)
-              exit(1)
+              if this_attr in this_obj.required_attrs or this_attr in this_obj.optional_attrs or this_attr == '_display_name':
+                this_obj = getattr(this_obj, this_attr)
+                build += [".%s"%(this_attr)]
+              else:
+                raise Exception("Unknown attribute: %s for %s" %(this_attr, build))
+
         # Hacky ways are, well, my way.
         except MissingImplementation, e:
           if this_attr in this_obj._attrs.__dict__["_attrs"]:
-            build += ['_attrs','__dict__["_attrs"]["%s"]' %(this_attr)]
+            build += ['._attrs','.__dict__["_attrs"]["%s"]' %(this_attr)]
 
         except resources.common.RequiredAttributeMissingError:
           if this_attr in this_obj._attrs.__dict__["_attrs"]:
-            build += ['_attrs','__dict__["_attrs"]["%s"]' %(this_attr)]
+            build += ['._attrs','.__dict__["_attrs"]["%s"]' %(this_attr)]
 
-        compiled += ["obj." + ".".join(build)]
+        compiled += ["obj" + "".join(build)]
       # EVAL!!! EVIL AND DANGEROUS HACK. HACK HACK HACK.
-     
+      
       if compiled:
         return compile(', '.join(compiled), '<string>', 'eval')
       
