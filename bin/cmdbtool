@@ -41,12 +41,6 @@ except Exception, e:
 __version__ = '0.0.1'
 __author__ = u'Erlend Bergsås <erlend.bergsaas@met.no>'
 
-###
-# Some configuration. hrm... Hardcoding rox
-default_output = {
-  'host': ["name", ["item", "serial"]]
-}
-
 # Tee hee hee
 def make_my_output(query, obj, output, output_format):
 
@@ -110,7 +104,7 @@ def search_query(query, output, output_format, args):
 # Setup argument parsing
 parser = ArgumentParser(description='Drac drac drac drac!')
 parser.add_argument("-1", "--each", help="Each argument is parsed as a separate query", action="store_true", default=False)
-parser.add_argument("-r", "--resource", type=str, metavar="resource", help="Lookup specified resource.")
+parser.add_argument("-r", "--resource", type=str, metavar="resource", help="Lookup specified resource.", default="host")
 parser.add_argument("-F", "--follow", help="Follow resources recursively", action="store_true")
 parser.add_argument("-i", "--ignore-case", help="Ignore case in searches", action="store_true")
 parser.add_argument("-e", "--escapes", help="Interpret backslash escapes", action="store_true")
@@ -142,8 +136,6 @@ if args.dict_dump:
   exit(0) 
 
 resource = args.resource
-if resource == None:
-  resource = default_output.keys()[0]
 
 if args.output != None:
   args.output = args.output.split(",")
