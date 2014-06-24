@@ -360,6 +360,8 @@ class CMDB:
       def __init__(self, client, resource):
         self.client = client
         self.resource = resource
+        self.resource_cache = client.cache_resource(resource)
+        self.resource_class = self.resource_cache.resource_class
         self.set_limit = None
         self.set_offset = None
         self.query = None

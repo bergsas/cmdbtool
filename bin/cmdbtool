@@ -1,5 +1,14 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+
+#
+# This code shows why you need to know your shit
+# prior to coding.
+#
+# This is just a bunch of text lines that python
+# happens to parse.
+#
+
 try:
   import sys
 except Exception, e:
@@ -38,11 +47,69 @@ default_output = {
   'host': ["name", ["item", "serial"]]
 }
 
-# Compile ''query''
-# This is DIRTY. And: rather unsafe. :) Oh well.
+# Tee hee hee
+def make_my_output(query, obj, output, output_format):
+
+  if not output:
+    output = query.client.default_output(obj)
+
+  # Clean the output a bit. :) Ugh. Another hack.
+  clean_output = query.client.sane_output(output, obj)
+  
+  if not output_format:
+    output_format = query.client.generate_output_format(clean_output)
+
+  compiled_output = query.client.compile_output(clean_output, obj)
+          
+  if not compiled_output:
+    print "Nothing to output"
+    exit(1)
+
+  return compiled_output, output_format
+
+# Ugh, I realise I do stuff in a weird way. :)
+def search_query(query, output, output_format, args):
+  query.set_limit = args.query_limit
+  query.set_offset = args.query_offset
+   
+  my_output = None
+  my_format = None
+
+  objects = 1
+  while objects:
+    objects = query.object_query()
+        
+    # Ugh I wish I could do "while objects = ..."
+    if not isinstance(objects, list):
+      break
+        
+    if args.count:
+      print "Count: %d/%d" %(query.offset(), query.total_count())
+      
+    query.client.tq("printing some ''objects''")
+
+    for obj in objects:
+      obj = query.resource_class(query.client.server, obj)
+
+      if args.dump and 'object' in args.dump:
+        query.client.dump_object(obj)
+
+      if not my_output or not my_format:
+        my_output, my_format = make_my_output(query, obj, output, output_format)
+
+      try:
+        print my_format % eval(my_output)
+        
+      # ugh. :(
+      except UnicodeEncodeError:
+        print query.client.unicode_fallback(unicode(my_format % eval(my_output)))
+      
+    query.client.tq()
+
 ###
 # Setup argument parsing
 parser = ArgumentParser(description='Drac drac drac drac!')
+parser.add_argument("-1", "--each", help="Each argument is parsed as a separate query", action="store_true", default=False)
 parser.add_argument("-r", "--resource", type=str, metavar="resource", help="Lookup specified resource.")
 parser.add_argument("-F", "--follow", help="Follow resources recursively", action="store_true")
 parser.add_argument("-i", "--ignore-case", help="Ignore case in searches", action="store_true")
@@ -92,7 +159,7 @@ if args.dump and 'resource' in args.dump:
   rs = client.cache_resource(resource).resource_schema
 
   for attr in rs:
-    print("  %s\n    %s (%s)"%(attr, rs[attr]["help_text"],rs[attr]["type"]))
+    print("  %s\n    %s (%s)"%(attr, rs[attr]["help_text"], rs[attr]["type"]))
   
   exit(0)
 
@@ -107,98 +174,30 @@ if args.dump and 'api-base' in args.dump:
 
 #  Dump "field looku ptypes"
 if args.dump and 'flt' in args.dump:
-  print "Flt baby (field lookup type!)"
   print client.server.field_lookup_types
   exit(0)
 
-resource_cache = client.cache_resource(resource)
-resource_class = resource_cache.resource_class
-
-#if args.output != None:
-#  output = args.output
-#else:
-#  try:
-#    output = default_output[resource]
-#  except KeyError, e:
-#    output = [resource_cache.display_name, resource_cache.pk]
 output = args.output
-output_sane = None
-
 output_format = args.format
+
 if args.escapes:
   output_format = output_format.decode('string_escape')
 
-#if args.format == None:
-#  output_format = ": %s"*len(output)
-#  output_format = output_format[2:]
-#else:
-#  output_format = args.format
-
 # Blurp
 try:
-  compiled_output = False
-  search = client.init_basic_search(resource, leftover)
-  # I've no idea whether this is "pythonic" or not.
-  query = client.new_query(resource, **search)
-
-
-  query.set_limit = args.query_limit
-  query.set_offset = args.query_offset
-   
-  objects = 1
-  try:
-    while objects:
-      objects = query.object_query()
-        
-      # Ugh I wish I could do "while objects = ..."
-      if not isinstance(objects, list):
-        break
-        
-      if args.count:
-        print "Count: %d/%d" %(query.offset(), query.total_count())
-      
-      client.tq("printing some ''objects''")
-
-      for obj in objects:
-        obj = resource_cache.resource_class(client.server, obj)
-
-        if args.dump and 'object' in args.dump:
-          client.dump_object(obj)
-
-        if not output:
-          output = client.default_output(obj)
-          
-        if not output_sane:
-          output_sane = client.sane_output(output, obj)
-
-        if not output_format:
-          output_format = client.generate_output_format(output_sane)
-        
-
-        if not compiled_output:
-          compiled_output = client.compile_output(output_sane, obj)
-          
-          if not compiled_output:
-            print "Nothing to output"
-            exit(1)
-
-        try:
-          print output_format % eval(compiled_output)
-        
-        # ugh. :(
-        except UnicodeEncodeError:
-          print client.unicode_fallback(unicode(output_format % eval(compiled_output)))
-      
-      client.tq()
-
-  except KeyboardInterrupt:
-    print "Uh oh."
-    raise KeyboardInterrupt
+  if not args.each:
+    search = client.init_basic_search(resource, leftover)
+    query = client.new_query(resource, **search)
+    search_query(query, output, output_format, args)
+  else:
+    for single in leftover:
+      search = client.init_basic_search(resource, [single])
+      query = client.new_query(resource, **search)
+      search_query(query, output, output_format, args)
 
 except KeyboardInterrupt:
   print "^C"
   exit(1)
-
 exit(0)
 
 
