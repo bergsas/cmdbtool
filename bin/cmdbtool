@@ -67,6 +67,7 @@ def search_query(query, output, output_format, args):
   my_format = None
 
   objects = 1
+  count = 0
   while objects:
     objects = query.object_query()
         
@@ -80,7 +81,11 @@ def search_query(query, output, output_format, args):
     query.client.tq("printing some ''objects''")
 
     if args.dump and ('query_result' in args.dump or 'qr' in args.dump or 'queryresult' in args.dump):
+#      query.client.tq("dump objects")
       print objects
+#      query.client.tq()
+      if 'qr_exit' in args.dump:
+        exit(0) # Oh well. I should throw and exception. I don't care. :)
 
     for obj in objects:
       if not args.no_resolution:
@@ -92,6 +97,8 @@ def search_query(query, output, output_format, args):
       if not my_output or not my_format:
         my_output, my_format = make_my_output(query, obj, output, output_format)
 
+      count = count + 1
+
       try:
         print my_format % eval(my_output)
         
@@ -100,6 +107,8 @@ def search_query(query, output, output_format, args):
         print query.client.unicode_fallback(unicode(my_format % eval(my_output)))
       
     query.client.tq()
+
+    return count
 
 ###
 # Setup argument parsing
@@ -178,19 +187,32 @@ if args.escapes:
 
 # Blurp
 try:
+  count = 0
   if not args.each:
     search = client.init_basic_search(resource, leftover)
     query = client.new_query(resource, **search)
-    search_query(query, output, output_format, args)
+    results = search_query(query, output, output_format, args)
+    count = count + results
   else:
     for single in leftover:
       search = client.init_basic_search(resource, [single])
       query = client.new_query(resource, **search)
-      search_query(query, output, output_format, args)
+      results = search_query(query, output, output_format, args)
+      count = count + results
 
 except KeyboardInterrupt:
   print "^C"
+  exit(2)
+
+# Output count?
+if args.count:
+  print "Count: %d" %(count) 
+
+# Return non-zero if query returned nothing
+if (count == 0):
   exit(1)
+
+# Return zero.
 exit(0)
 
 

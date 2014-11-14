@@ -23,7 +23,7 @@ parser = ArgumentParser(description='Rack tool')
 parser.add_argument("-D", "--dump", action='append')
 parser.add_argument("-X", "--xdebug", action='append')
 parser.add_argument("-n", "--no-reverse", dest='reverse', action='store_false', default=True,  help="Don't resolve rack items's hostnames.")
-parser.add_argument("-i", "--informative", action="store_true", default=False, help="Print info about each rack, in addition to rack overview")
+#parser.add_argument("-i", "--informative", action="store_true", default=False, help="Print info about each rack, in addition to rack overview")
 parser.add_argument("-H", "--host", action="store_true", default=False, help="Lookup rackunit by host name rather than serial or whatever")
 parser.add_argument("-s", "--search", action='store_true', default=False)
 
@@ -104,9 +104,6 @@ def search_mode(client, leftover):
         this_rev = get_reverse_item(client, item['item']['id'])
       else:
         this_rev= None
-
-      
-
 
       print "%s-%s %s (%s) %s (%s)" %(
         item['rack']['name'], rackunit, 
