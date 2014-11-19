@@ -7,11 +7,14 @@ the -r switch.
   $ cmdbtool pc4442
   pc4442  [u'/api/v2/function/26/']       <Item - pk: 2854, XXXX>   <OS - pk: 9, Linux Ubuntu 12.04 Precise Pangolin amd64> /api/v2/prodlevel/4/    /api/v2/ratype/6/
 
+  $ cmdbtool -r item serial==XXXX
+  XXXX      <Manufacturer - pk: 27, HP>     <ItemModel - pk: 506, Compaq elite 8300SFF>     /api/v2/itemsupport/28/ <Location - pk: 1, Hovedbygget Oslo><Vendor - pk: 2, Dell>   <StatusCode - pk: 3, AKTIV>
+
+USING 
+
   $ cmdbtool item.serial==XXXX
   pc4442  [u'/api/v2/function/26/']       <Item - pk: 2854, XXXX>   <OS - pk: 9, Linux Ubuntu 12.04 Precise Pangolin amd64> /api/v2/prodlevel/4/    /api/v2/ratype/6/
 
-  $ cmdbtool -r item serial==XXXX
-  XXXX      <Manufacturer - pk: 27, HP>     <ItemModel - pk: 506, Compaq elite 8300SFF>     /api/v2/itemsupport/28/ <Location - pk: 1, Hovedbygget Oslo><Vendor - pk: 2, Dell>   <StatusCode - pk: 3, AKTIV>
 
 QUERY-LIMIT
 -----------
