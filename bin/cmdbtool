@@ -158,8 +158,14 @@ if args.output != None:
 #  Dump resource
 if args.dump and 'resource' in args.dump:
   print "Resource: %s" %(resource)
+  print
   rs = client.cache_resource(resource).resource_schema
 
+  print "display_name: %s" %(client.cache_resource(resource).display_name)
+  print "required_attrs: %s" %(", ".join(client.cache_resource(resource).required_attrs))
+  print "optional_attrs: %s" %(", ".join(client.cache_resource(resource).optional_attrs))
+  print ""
+  print "Attributes:\n"
   for attr in rs:
     print("  %s\n    %s (%s)"%(attr, rs[attr]["help_text"], rs[attr]["type"]))
   
