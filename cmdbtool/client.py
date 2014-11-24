@@ -181,13 +181,13 @@ class CMDB:
     # operator: [case sensitive, case insensitive]
 
     search_operators = {
-      '==':  ['contains','icontains'],
-      '===': ['exact','iexact'],
-      '>':   ['gt','gt'],
-      '>=':  ['gte','gte'],
-      '~':   ['regex','iregex'],
-      '<':   ['lt','lt'],
-      '<=':  ['lte','lte']
+      '==':  ('contains','icontains'),
+      '===': ('exact','iexact'),
+      '>':   ('gt','gt'),
+      '>=':  ('gte','gte'),
+      '~':   ('regex','iregex'),
+      '<':   ('lt','lt'),
+      '<=':  ('lte','lte')
     }
 
    #(

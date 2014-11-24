@@ -173,16 +173,30 @@ if args.dump and 'resource' in args.dump:
 
 #  Dump api base
 if args.dump and 'api-base' in args.dump:
-  print "Api base, baby."
+  print "Api base, baby"
   api_base = client.server._api_base
   for resource in api_base:
-    print(resource)
-  
+    print "  %s"%(resource)
+ 
   exit(0)
 
 #  Dump "field looku ptypes"
-if args.dump and 'flt' in args.dump:
-  print client.server.field_lookup_types
+if args.dump and ('flt' in args.dump or 'field-lookup-types' in args.dump):
+  print "Field lookup types:\n"
+  for n in client.server.field_lookup_types:
+    print "%s" %(n)
+  exit(0)
+
+if args.dump and ('search_operators' in args.dump or 'so' in args.dump):
+  print "Search operators matched to ''field lookup type'':\n"
+  print "%-3s %-10s %-10s" %("", "Normal", "Case insensitive (-i)")
+  print ""
+
+  flt = client.server.field_lookup_types
+
+  for n in client.search_operators.keys():
+#    print "%-10s %-10s %-10s" %(n, client.search_operators[n][0], client.search_operators[n][1])
+    print "%-3s %-10s %-10s " %((n,)+client.search_operators[n])
   exit(0)
 
 output = args.output
