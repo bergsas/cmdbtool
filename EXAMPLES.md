@@ -31,7 +31,7 @@ namely the default resource ''host''. For ''item'' it would look like this:
 lazy to figure that message out. UTF-8 and ascii conversion. Details)
 
 USING KEYS TO QUERY THE CMDB: 
-
+-----------------------------
 To use a different lookup key make queries like the following:
 
   $ cmdbtool item.serial==XXXX
@@ -39,6 +39,9 @@ To use a different lookup key make queries like the following:
 
 Here I look for a host object which is linked to a item object whose serial is
 XXXX. 
+
+FIELD-LOOKUP TYPE
+-----------------
 
 QUERY-LIMIT
 -----------
@@ -56,5 +59,12 @@ indeed to 0 to return everything:
 Here we see that we've got 801 host items that match pc, while cmdbtool
 will only return 20 if you don't disable the query-limit.
 
+FORMATTING
+----------
+Here's how to format stuff:
 
+For instance:
 
+  $ cmdbtool -o name,item.statuscode.name -O "%s: %s" HOSTNAME
+
+-o picks out a set of fields, and -O formats in good old printf style
